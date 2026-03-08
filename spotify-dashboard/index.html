@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<meta charset="UTF-8">
+<title>Spotify Music Explorer</title>
+
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+<style>
+
+body{
+font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto;
+background:#f3f4f6;
+margin:0;
+}
+
+header{
+background:#1DB954;
+color:white;
+padding:18px;
+font-size:28px;
+font-weight:600;
+text-align:center;
+}
+
+.container{
+max-width:1200px;
+margin:auto;
+padding:30px;
+}
+
+.controls{
+text-align:center;
+margin-bottom:25px;
+}
+
+select{
+padding:8px 12px;
+border-radius:6px;
+border:1px solid #ccc;
+font-size:15px;
+}
+
+.grid{
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:25px;
+}
+
+.panel{
+background:white;
+padding:20px;
+border-radius:12px;
+box-shadow:0 4px 12px rgba(0,0,0,0.08);
+}
+
+.panel h2{
+margin-top:0;
+font-size:20px;
+}
+
+.chart{
+height:420px;
+}
+
+.full{
+grid-column:1 / span 2;
+}
+
+table{
+width:100%;
+border-collapse:collapse;
+}
+
+th,td{
+padding:8px;
+border-bottom:1px solid #ddd;
+text-align:left;
+}
+
+th{
+background:#f0f0f0;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<header>
+Spotify Music Explorer
+</header>
+
+<div class="container">
+
+<div class="controls">
+
+<label>Audio Feature:</label>
+
+<select id="featureSelect">
+<option value="danceability">danceability</option>
+<option value="energy">energy</option>
+<option value="valence">valence</option>
+<option value="acousticness">acousticness</option>
+<option value="speechiness">speechiness</option>
+<option value="liveness">liveness</option>
+</select>
+
+</div>
+
+<div class="grid">
+
+<div class="panel full">
+<h2>Feature vs Popularity</h2>
+<div id="scatterPlot" class="chart"></div>
+</div>
+
+<div class="panel">
+<h2>Genre Distribution</h2>
+<div id="genreBar" class="chart"></div>
+</div>
+
+<div class="panel">
+<h2>Feature Correlation</h2>
+<div id="heatmap" class="chart"></div>
+</div>
+
+<div class="panel full">
+<h2>Top Popular Songs</h2>
+<table id="topSongs">
+<thead>
+<tr>
+<th>Track</th>
+<th>Artist</th>
+<th>Genre</th>
+<th>Popularity</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+</div>
+
+</div>
+
+</div>
+
+<script>
+
+const features=[
+"danceability",
+"energy",
+"valence",
+"acousticness",
+"speechiness",
+"instrumentalness",
+"liveness",
+"popularity"
+]
+
+let dataset=[]
+let activeGenre=null
+
+async function loadCSV(){
+
+const response=await fetch("SpotifyFeatures.csv")
+const text=await response.text()
+
+const rows=text.split("\n")
+const headers=rows[0].split(",")
+
+for(let i=1;i<rows.length;i++){
+
+const values=rows[i].split(",")
+
+if(values.length!==headers.length) continue
+
+let obj={}
+
+headers.forEach((h,j)=>obj[h]=values[j])
+
+dataset.push(obj)
+
+}
+
+dataset.forEach(d=>{
+features.forEach(f=>{
+if(d[f]) d[f]=+d[f]
+})
+})
+
+}
+
+function drawGenreBar(){
+
+let counts={}
+
+dataset.forEach(d=>{
+counts[d.genre]=(counts[d.genre]||0)+1
+})
+
+let genres=Object.keys(counts)
+let values=Object.values(counts)
+
+Plotly.newPlot("genreBar",[{
+
+x:genres,
+y:values,
+type:"bar",
+marker:{color:"#1DB954"}
+
+}])
+
+document.getElementById("genreBar")
+.on("plotly_click",function(data){
+
+activeGenre=data.points[0].x
+drawScatter(document.getElementById("featureSelect").value)
+
+})
+
+}
+
+function drawScatter(feature){
+
+let data=dataset
+
+if(activeGenre){
+
+data=data.filter(d=>d.genre===activeGenre)
+
+}
+
+let genres=[...new Set(data.map(d=>d.genre))].slice(0,10)
+
+let traces=[]
+
+genres.forEach(g=>{
+
+let subset=data.filter(d=>d.genre===g)
+
+traces.push({
+
+x:subset.map(d=>d[feature]),
+y:subset.map(d=>d.popularity),
+
+text:subset.map(d=>
+`Track: ${d.track_name}<br>
+Artist: ${d.artist_name}<br>
+Genre: ${d.genre}<br>
+${feature}: ${d[feature]}<br>
+Popularity: ${d.popularity}`
+),
+
+hoverinfo:"text",
+
+mode:"markers",
+type:"scatter",
+name:g,
+
+marker:{
+size:7,
+opacity:0.7
+}
+
+})
+
+})
+
+Plotly.newPlot("scatterPlot",traces,{
+
+title:`${feature} vs Popularity`,
+xaxis:{title:feature},
+yaxis:{title:"Popularity"},
+legend:{orientation:"h"},
+margin:{t:50}
+
+})
+
+}
+
+function corr(a,b){
+
+let n=a.length
+
+let meanA=a.reduce((x,y)=>x+y)/n
+let meanB=b.reduce((x,y)=>x+y)/n
+
+let num=0
+let denA=0
+let denB=0
+
+for(let i=0;i<n;i++){
+
+let da=a[i]-meanA
+let db=b[i]-meanB
+
+num+=da*db
+denA+=da*da
+denB+=db*db
+
+}
+
+return num/Math.sqrt(denA*denB)
+
+}
+
+function drawHeatmap(){
+
+let matrix=[]
+
+features.forEach(f1=>{
+
+let row=[]
+
+features.forEach(f2=>{
+
+let a=dataset.map(d=>d[f1])
+let b=dataset.map(d=>d[f2])
+
+row.push(corr(a,b))
+
+})
+
+matrix.push(row)
+
+})
+
+Plotly.newPlot("heatmap",[{
+
+z:matrix,
+x:features,
+y:features,
+type:"heatmap",
+colorscale:"RdBu",
+zmin:-1,
+zmax:1
+
+}])
+
+}
+
+function drawTopSongs(){
+
+let sorted=[...dataset]
+.sort((a,b)=>b.popularity-a.popularity)
+.slice(0,20)
+
+let tbody=document.querySelector("#topSongs tbody")
+
+tbody.innerHTML=""
+
+sorted.forEach(d=>{
+
+let row=`
+<tr>
+<td>${d.track_name}</td>
+<td>${d.artist_name}</td>
+<td>${d.genre}</td>
+<td>${d.popularity}</td>
+</tr>
+`
+
+tbody.innerHTML+=row
+
+})
+
+}
+
+async function init(){
+
+await loadCSV()
+
+drawGenreBar()
+drawScatter("danceability")
+drawHeatmap()
+drawTopSongs()
+
+}
+
+init()
+
+document.getElementById("featureSelect")
+.addEventListener("change",e=>{
+
+drawScatter(e.target.value)
+
+})
+
+</script>
+
+</body>
+</html>
