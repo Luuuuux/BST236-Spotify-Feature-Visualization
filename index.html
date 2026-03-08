@@ -273,7 +273,11 @@ Plotly.newPlot("scatterPlot",traces,{
 title:`${feature} vs Popularity`,
 xaxis:{title:feature},
 yaxis:{title:"Popularity"},
-legend:{orientation:"h"},
+legend:{
+orientation:"v",
+x:1.02,
+y:1
+},
 margin:{t:50}
 
 })
